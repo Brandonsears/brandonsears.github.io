@@ -2,248 +2,558 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Market Heat Map</title>
+    <title>Market Heat Map Pro</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Google Sans', Arial, sans-serif;
-            background-color: #ffffff;
-            color: #202124;
-            line-height: 1.5;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 32px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid #dadce0;
-        }
-
-        .title {
-            font-size: 24px;
-            font-weight: 400;
-            color: #202124;
-        }
-
-        .map-container {
-            background: white;
+        /* Previous styles remain, adding new ones */
+        .data-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px;
             border-radius: 8px;
-            padding: 24px;
-            border: 1px solid #dadce0;
-            box-shadow: 0 1px 2px rgba(60,64,67,0.3);
-        }
-
-        .tile {
-            stroke: #ffffff;
-            stroke-width: 1px;
-            transition: opacity 0.2s;
-        }
-
-        .tile:hover {
-            opacity: 0.8;
-        }
-
-        .tile-label {
-            font-family: 'Google Sans', Arial, sans-serif;
-            font-size: 12px;
-            fill: white;
-            pointer-events: none;
-        }
-
-        .sector-label {
-            font-size: 14px;
-            font-weight: 500;
-            fill: #202124;
-        }
-
-        #tooltip {
-            position: absolute;
-            background: white;
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            box-shadow: 0 2px 4px rgba(60,64,67,0.3);
-            border: 1px solid #dadce0;
-            display: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 13px;
             z-index: 1000;
         }
-
-        .tooltip-header {
-            font-weight: 500;
-            margin-bottom: 8px;
+        
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #eee;
+            border-radius: 2px;
+            margin-top: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #1a73e8;
+            border-radius: 2px;
+            transition: width 0.3s ease;
         }
 
-        .tooltip-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 24px;
-            margin: 4px 0;
-        }
-
-        .tooltip-label {
-            color: #5f6368;
-        }
-
-        .positive { color: #137333; }
-        .negative { color: #c5221f; }
+        /* Add more styles here... */
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1 class="title">Market Heat Map</h1>
-        </div>
-        <div class="map-container">
-            <div id="market-map"></div>
-        </div>
-    </div>
-    <div id="tooltip"></div>
+    <!-- Previous HTML structure remains -->
 
     <script>
-        // Static data to ensure visualization works
-        const initialData = {
-            name: "Market Map",
-            children: [
-                {
-                    name: "Technology",
-                    children: [
-                        { name: "AAPL", marketCap: 2800000000000, price: 178.92, change: 2.5, volume: "86.5M" },
-                        { name: "MSFT", marketCap: 2300000000000, price: 402.15, change: -1.2, volume: "22.1M" },
-                        { name: "GOOGL", marketCap: 1800000000000, price: 142.65, change: 1.8, volume: "25.3M" }
-                    ]
-                },
-                {
-                    name: "Financial",
-                    children: [
-                        { name: "JPM", marketCap: 500000000000, price: 172.34, change: -0.8, volume: "8.2M" },
-                        { name: "BAC", marketCap: 300000000000, price: 33.47, change: -2.1, volume: "42.1M" },
-                        { name: "GS", marketCap: 200000000000, price: 383.91, change: 0.5, volume: "15.6M" }
-                    ]
-                },
-                {
-                    name: "Healthcare",
-                    children: [
-                        { name: "JNJ", marketCap: 400000000000, price: 162.38, change: 1.2, volume: "5.4M" },
-                        { name: "PFE", marketCap: 300000000000, price: 27.43, change: -1.5, volume: "28.9M" },
-                        { name: "UNH", marketCap: 350000000000, price: 502.16, change: 0.8, volume: "2.1M" }
-                    ]
-                }
-            ]
+        // Data Storage System
+        class MarketDataStore {
+            constructor() {
+                this.stockData = new Map(); // Real-time data
+                this.cachedData = new Map(); // Cached data
+                this.lastUpdateTime = new Map(); // Track data freshness
+                this.pendingUpdates = new Set(); // Track ongoing updates
+                this.updateCallbacks = new Set(); // Callbacks for UI updates
+            }
+
+            // Store new data
+            updateStock(symbol, data) {
+                this.stockData.set(symbol, data);
+                this.lastUpdateTime.set(symbol, Date.now());
+                this.cachedData.set(symbol, data); // Update cache
+                this.notifyUpdateCallbacks(symbol);
+            }
+
+            // Get data with fallback to cache
+            getStock(symbol) {
+                return this.stockData.get(symbol) || this.cachedData.get(symbol);
+            }
+
+            // Check data freshness
+            isDataFresh(symbol) {
+                const lastUpdate = this.lastUpdateTime.get(symbol);
+                return lastUpdate && (Date.now() - lastUpdate < 300000); // 5 minutes
+            }
+
+            // Register update callback
+            onUpdate(callback) {
+                this.updateCallbacks.add(callback);
+            }
+
+            // Notify all callbacks
+            notifyUpdateCallbacks(symbol) {
+                this.updateCallbacks.forEach(callback => callback(symbol));
+            }
+        }
+
+        // Initialize data store
+        const marketData = new MarketDataStore();
+
+        // Sector definitions with full stock lists
+        const sectors = {
+            "Technology": {
+                color: "#1a73e8",
+                stocks: [
+                    "AAPL", "MSFT", "GOOGL", "NVDA", "AVGO", "CSCO", "ADBE", "CRM", "INTC", "AMD",
+                    "QCOM", "TXN", "AMAT", "MU", "ADI", "LRCX", "KLAC", "SNPS", "CDNS", "NXPI",
+                    "MCHP", "TEL", "STM", "KEYS", "FTV", "APH", "DELL", "HPQ", "HPE", "CTSH",
+                    "ZBRA", "JNPR", "NTAP", "WDC", "SWKS", "XLNX", "MXIM", "MRVL", "ON", "GLIU"
+                ]
+            },
+            "Financial": {
+                color: "#34a853",
+                stocks: [
+                    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "PNC",
+                    "TFC", "USB", "COF", "BK", "SPGI", "MCO", "CB", "MMC", "AON", "TRV",
+                    "ALL", "PGR", "MET", "PRU", "AIG", "AFL", "TROW", "NTRS", "STT", "DFS"
+                ]
+            },
+            // Add more sectors here...
         };
 
-        function getColor(change) {
-            change = parseFloat(change);
-            if (change > 2) return "#137333";
-            if (change > 0) return "#1e8e3e";
-            if (change > -2) return "#d93025";
-            return "#c5221f";
+        // Batch data fetching
+        async function fetchBatchData(symbols) {
+            try {
+                const queries = symbols.map(symbol => `${symbol}`).join(',');
+                const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${queries}`);
+                const data = await response.json();
+                
+                if (data.quoteResponse && data.quoteResponse.result) {
+                    data.quoteResponse.result.forEach(quote => {
+                        marketData.updateStock(quote.symbol, {
+                            name: quote.symbol,
+                            price: quote.regularMarketPrice,
+                            change: quote.regularMarketChangePercent,
+                            marketCap: quote.marketCap,
+                            volume: quote.regularMarketVolume
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error('Batch fetch error:', error);
+            }
         }
 
-        function formatMarketCap(marketCap) {
-            if (marketCap >= 1e12) return `$${(marketCap / 1e12).toFixed(1)}T`;
-            return `$${(marketCap / 1e9).toFixed(1)}B`;
+        // Progress tracking
+        let totalStocks = 0;
+        let loadedStocks = 0;
+
+        Object.values(sectors).forEach(sector => {
+            totalStocks += sector.stocks.length;
+        });
+
+        function updateProgress() {
+            const progress = (loadedStocks / totalStocks) * 100;
+            document.querySelector('.progress-fill').style.width = `${progress}%`;
+            document.querySelector('.progress-text').textContent = 
+                `Loading: ${loadedStocks}/${totalStocks} stocks`;
         }
 
-        function createVisualization(data) {
+        // Batch loading system
+        async function loadAllData() {
+            loadedStocks = 0;
+            
+            // Load high priority stocks first
+            const highPriorityStocks = new Set([
+                "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ"
+            ]);
+
+            // First wave: High priority stocks
+            const priorityBatch = [...highPriorityStocks];
+            await fetchBatchData(priorityBatch);
+            loadedStocks += priorityBatch.length;
+            updateProgress();
+            updateVisualization();
+
+            // Second wave: Rest of the stocks in batches
+            for (const sector of Object.values(sectors)) {
+                const regularStocks = sector.stocks.filter(s => !highPriorityStocks.has(s));
+                
+                for (let i = 0; i < regularStocks.length; i += BATCH_SIZE) {
+                    const batch = regularStocks.slice(i, i + BATCH_SIZE);
+                    await fetchBatchData(batch);
+                    loadedStocks += batch.length;
+                    updateProgress();
+                    updateVisualization();
+                    await new Promise(r => setTimeout(r, BATCH_DELAY));
+                }
+            }
+        }
+
+        // Continue to Part 2...
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Market Heat Map Pro</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Previous styles remain, adding new ones */
+        .data-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 13px;
+            z-index: 1000;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #eee;
+            border-radius: 2px;
+            margin-top: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #1a73e8;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        /* Add more styles here... */
+    </style>
+</head>
+<body>
+    <!-- Previous HTML structure remains -->
+
+    <script>
+        // Data Storage System
+        class MarketDataStore {
+            constructor() {
+                this.stockData = new Map(); // Real-time data
+                this.cachedData = new Map(); // Cached data
+                this.lastUpdateTime = new Map(); // Track data freshness
+                this.pendingUpdates = new Set(); // Track ongoing updates
+                this.updateCallbacks = new Set(); // Callbacks for UI updates
+            }
+
+            // Store new data
+            updateStock(symbol, data) {
+                this.stockData.set(symbol, data);
+                this.lastUpdateTime.set(symbol, Date.now());
+                this.cachedData.set(symbol, data); // Update cache
+                this.notifyUpdateCallbacks(symbol);
+            }
+
+            // Get data with fallback to cache
+            getStock(symbol) {
+                return this.stockData.get(symbol) || this.cachedData.get(symbol);
+            }
+
+            // Check data freshness
+            isDataFresh(symbol) {
+                const lastUpdate = this.lastUpdateTime.get(symbol);
+                return lastUpdate && (Date.now() - lastUpdate < 300000); // 5 minutes
+            }
+
+            // Register update callback
+            onUpdate(callback) {
+                this.updateCallbacks.add(callback);
+            }
+
+            // Notify all callbacks
+            notifyUpdateCallbacks(symbol) {
+                this.updateCallbacks.forEach(callback => callback(symbol));
+            }
+        }
+
+        // Initialize data store
+        const marketData = new MarketDataStore();
+
+        // Sector definitions with full stock lists
+        const sectors = {
+            "Technology": {
+                color: "#1a73e8",
+                stocks: [
+                    "AAPL", "MSFT", "GOOGL", "NVDA", "AVGO", "CSCO", "ADBE", "CRM", "INTC", "AMD",
+                    "QCOM", "TXN", "AMAT", "MU", "ADI", "LRCX", "KLAC", "SNPS", "CDNS", "NXPI",
+                    "MCHP", "TEL", "STM", "KEYS", "FTV", "APH", "DELL", "HPQ", "HPE", "CTSH",
+                    "ZBRA", "JNPR", "NTAP", "WDC", "SWKS", "XLNX", "MXIM", "MRVL", "ON", "GLIU"
+                ]
+            },
+            "Financial": {
+                color: "#34a853",
+                stocks: [
+                    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "PNC",
+                    "TFC", "USB", "COF", "BK", "SPGI", "MCO", "CB", "MMC", "AON", "TRV",
+                    "ALL", "PGR", "MET", "PRU", "AIG", "AFL", "TROW", "NTRS", "STT", "DFS"
+                ]
+            },
+            // Add more sectors here...
+        };
+
+        // Batch data fetching
+        async function fetchBatchData(symbols) {
+            try {
+                const queries = symbols.map(symbol => `${symbol}`).join(',');
+                const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${queries}`);
+                const data = await response.json();
+                
+                if (data.quoteResponse && data.quoteResponse.result) {
+                    data.quoteResponse.result.forEach(quote => {
+                        marketData.updateStock(quote.symbol, {
+                            name: quote.symbol,
+                            price: quote.regularMarketPrice,
+                            change: quote.regularMarketChangePercent,
+                            marketCap: quote.marketCap,
+                            volume: quote.regularMarketVolume
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error('Batch fetch error:', error);
+            }
+        }
+
+        // Progress tracking
+        let totalStocks = 0;
+        let loadedStocks = 0;
+
+        Object.values(sectors).forEach(sector => {
+            totalStocks += sector.stocks.length;
+        });
+
+        function updateProgress() {
+            const progress = (loadedStocks / totalStocks) * 100;
+            document.querySelector('.progress-fill').style.width = `${progress}%`;
+            document.querySelector('.progress-text').textContent = 
+                `Loading: ${loadedStocks}/${totalStocks} stocks`;
+        }
+
+        // Batch loading system
+        async function loadAllData() {
+            loadedStocks = 0;
+            
+            // Load high priority stocks first
+            const highPriorityStocks = new Set([
+                "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ"
+            ]);
+
+            // First wave: High priority stocks
+            const priorityBatch = [...highPriorityStocks];
+            await fetchBatchData(priorityBatch);
+            loadedStocks += priorityBatch.length;
+            updateProgress();
+            updateVisualization();
+
+            // Second wave: Rest of the stocks in batches
+            for (const sector of Object.values(sectors)) {
+                const regularStocks = sector.stocks.filter(s => !highPriorityStocks.has(s));
+                
+                for (let i = 0; i < regularStocks.length; i += BATCH_SIZE) {
+                    const batch = regularStocks.slice(i, i + BATCH_SIZE);
+                    await fetchBatchData(batch);
+                    loadedStocks += batch.length;
+                    updateProgress();
+                    updateVisualization();
+                    await new Promise(r => setTimeout(r, BATCH_DELAY));
+                }
+            }
+        }
+
+        // Continue to Part 2...
+        // Visualization code
+        function createVisualization(forceUpdate = false) {
             const width = document.querySelector("#market-map").clientWidth;
-            const height = 700;
+            const height = 800; // Increased height for better visibility
+
+            // Prepare data structure for D3
+            const hierarchyData = {
+                name: "Market Map",
+                children: Object.entries(sectors).map(([sectorName, sectorData]) => ({
+                    name: sectorName,
+                    color: sectorData.color,
+                    children: sectorData.stocks
+                        .map(symbol => marketData.getStock(symbol))
+                        .filter(stock => stock !== undefined)
+                        .map(stock => ({
+                            ...stock,
+                            isFresh: marketData.isDataFresh(stock.name)
+                        }))
+                }))
+            };
+
+            // Clear previous visualization if forcing update
+            if (forceUpdate) {
+                d3.select("#market-map").html("");
+            }
 
             const treemap = d3.treemap()
                 .size([width, height])
-                .paddingTop(20)
-                .paddingRight(2)
-                .paddingBottom(2)
-                .paddingLeft(2)
+                .paddingTop(28)
+                .paddingRight(3)
+                .paddingBottom(3)
+                .paddingLeft(3)
                 .round(true);
 
-            const root = d3.hierarchy(data)
-                .sum(d => d.marketCap)
-                .sort((a, b) => b.value - a.value);
+            const root = d3.hierarchy(hierarchyData)
+                .sum(d => d.marketCap || 0)
+                .sort((a, b) => (b.value || 0) - (a.value || 0));
 
             treemap(root);
 
             const svg = d3.select("#market-map")
                 .append("svg")
                 .attr("width", width)
-                .attr("height", height);
+                .attr("height", height)
+                .style("font-family", "Inter, sans-serif");
 
-            const sectors = svg.selectAll("g")
+            // Create sector groups
+            const sectors = svg.selectAll(".sector")
                 .data(root.children)
                 .enter()
-                .append("g");
+                .append("g")
+                .attr("class", "sector")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            // Add sector backgrounds
+            sectors.append("rect")
+                .attr("class", "sector-bg")
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", d => d.y1 - d.y0)
+                .attr("fill", "#f8f9fa")
+                .attr("stroke", "#dadce0");
+
+            // Add sector headers
+            sectors.append("rect")
+                .attr("class", "sector-header")
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", 28)
+                .attr("fill", d => d.data.color)
+                .attr("opacity", 0.1);
 
             sectors.append("text")
                 .attr("class", "sector-label")
-                .attr("x", d => d.x0 + 5)
-                .attr("y", d => d.y0 + 15)
-                .text(d => d.data.name);
+                .attr("x", 10)
+                .attr("y", 20)
+                .text(d => `${d.data.name} (${d.children.length})`)
+                .attr("fill", "#202124")
+                .style("font-weight", 500);
 
-            const cell = sectors.selectAll("g")
+            // Create stock tiles
+            const cells = sectors.selectAll(".stock")
                 .data(d => d.leaves())
                 .enter()
                 .append("g")
-                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+                .attr("class", "stock")
+                .attr("transform", d => `translate(${d.x0 - d.parent.x0},${d.y0 - d.parent.y0})`);
 
-            cell.append("rect")
+            // Add stock rectangles
+            cells.append("rect")
                 .attr("class", "tile")
                 .attr("width", d => d.x1 - d.x0)
                 .attr("height", d => d.y1 - d.y0)
-                .attr("fill", d => getColor(d.data.change))
-                .on("mouseover", function(event, d) {
-                    const tooltip = d3.select("#tooltip");
-                    tooltip.style("display", "block")
-                        .html(`
-                            <div class="tooltip-header">${d.data.name}</div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Price:</span>
-                                <span>$${d.data.price.toFixed(2)}</span>
-                            </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Change:</span>
-                                <span class="${d.data.change >= 0 ? 'positive' : 'negative'}">
-                                    ${d.data.change}%
-                                </span>
-                            </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Market Cap:</span>
-                                <span>${formatMarketCap(d.data.marketCap)}</span>
-                            </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Volume:</span>
-                                <span>${d.data.volume}</span>
-                            </div>
-                        `)
-                        .style("left", (event.pageX + 10) + "px")
-                        .style("top", (event.pageY + 10) + "px");
-                })
-                .on("mouseout", function() {
-                    d3.select("#tooltip").style("display", "none");
-                });
+                .attr("fill", d => getStockColor(d.data.change))
+                .attr("opacity", d => d.data.isFresh ? 1 : 0.7)
+                .on("mouseover", showTooltip)
+                .on("mouseout", hideTooltip);
 
-            cell.append("text")
+            // Add stock labels
+            cells.append("text")
                 .attr("class", "tile-label")
-                .attr("x", 5)
-                .attr("y", 20)
-                .text(d => d.data.name);
+                .attr("x", 4)
+                .attr("y", 14)
+                .text(d => d.data.name)
+                .attr("fill", "white")
+                .style("font-size", "11px")
+                .style("font-weight", 500);
+
+            // Add price labels
+            cells.append("text")
+                .attr("class", "price-label")
+                .attr("x", 4)
+                .attr("y", 26)
+                .text(d => `$${d.data.price?.toFixed(2) || '0.00'}`)
+                .attr("fill", "rgba(255,255,255,0.9)")
+                .style("font-size", "10px");
+
+            // Add change percentage
+            cells.append("text")
+                .attr("class", "change-label")
+                .attr("x", 4)
+                .attr("y", 38)
+                .text(d => `${d.data.change?.toFixed(1) || '0.0'}%`)
+                .attr("fill", d => d.data.change >= 0 ? "#00ff88" : "#ff4d4d")
+                .style("font-size", "10px");
         }
 
-        // Create initial visualization with static data
-        createVisualization(initialData);
+        // Color scale for stock changes
+        function getStockColor(change) {
+            if (!change) return "#666666";
+            if (change > 3) return "#137333";
+            if (change > 1) return "#1e8e3e";
+            if (change > 0) return "#34a853";
+            if (change > -1) return "#ea4335";
+            if (change > -3) return "#d93025";
+            return "#c5221f";
+        }
+
+        // Tooltip functions
+        function showTooltip(event, d) {
+            const tooltip = d3.select("#tooltip");
+            const stock = d.data;
+            
+            tooltip.style("display", "block")
+                .html(`
+                    <div class="tooltip-header">${stock.name}</div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Price:</span>
+                        <span>$${stock.price?.toFixed(2) || '0.00'}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Change:</span>
+                        <span class="${stock.change >= 0 ? 'positive' : 'negative'}">
+                            ${stock.change?.toFixed(2) || '0.00'}%
+                        </span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Market Cap:</span>
+                        <span>${formatMarketCap(stock.marketCap)}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Volume:</span>
+                        <span>${formatVolume(stock.volume)}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Data Age:</span>
+                        <span>${stock.isFresh ? 'Real-time' : 'Cached'}</span>
+                    </div>
+                `)
+                .style("left", `${event.pageX + 10}px`)
+                .style("top", `${event.pageY + 10}px`);
+        }
+
+        function hideTooltip() {
+            d3.select("#tooltip").style("display", "none");
+        }
+
+        // Utility functions
+        function formatMarketCap(marketCap) {
+            if (!marketCap) return 'N/A';
+            if (marketCap >= 1e12) return `$${(marketCap / 1e12).toFixed(1)}T`;
+            if (marketCap >= 1e9) return `$${(marketCap / 1e9).toFixed(1)}B`;
+            return `$${(marketCap / 1e6).toFixed(1)}M`;
+        }
+
+        function formatVolume(volume) {
+            if (!volume) return 'N/A';
+            if (volume >= 1e9) return `${(volume / 1e9).toFixed(1)}B`;
+            if (volume >= 1e6) return `${(volume / 1e6).toFixed(1)}M`;
+            return volume.toLocaleString();
+        }
+
+        // Initialize visualization
+        createVisualization();
+        
+        // Start data loading
+        loadAllData();
+
+        // Refresh data periodically
+        setInterval(loadAllData, 240000); // Every 4 minutes
+
     </script>
 </body>
 </html>
