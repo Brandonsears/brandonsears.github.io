@@ -17,12 +17,12 @@
             background-color: #0a0b0e;
             color: #ffffff;
             min-height: 100vh;
+            padding: 20px;
         }
 
         .container {
             max-width: 1800px;
             margin: 0 auto;
-            padding: 20px;
         }
 
         .header {
@@ -53,12 +53,23 @@
             border-radius: 12px;
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            height: 800px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #market-map {
+            width: 100%;
+            height: 100%;
         }
 
         .tile {
             stroke: #0a0b0e;
             stroke-width: 1px;
             transition: all 0.3s ease;
+            min-width: 80px;
+            min-height: 60px;
         }
 
         .tile:hover {
@@ -72,10 +83,11 @@
             font-size: 12px;
             fill: white;
             pointer-events: none;
+            dominant-baseline: hanging;
         }
 
         .sector-label {
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 500;
             fill: #ffffff;
             opacity: 0.9;
@@ -85,46 +97,43 @@
             position: absolute;
             background: rgba(18, 19, 26, 0.95);
             color: white;
-            padding: 12px;
+            padding: 12px 16px;
             border-radius: 8px;
             font-size: 13px;
             display: none;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             border: 1px solid #232323;
             z-index: 1000;
+            pointer-events: none;
         }
 
         .tooltip-header {
             font-weight: 500;
             margin-bottom: 8px;
             font-size: 14px;
+            color: #ffffff;
         }
 
         .tooltip-row {
             display: flex;
             justify-content: space-between;
+            gap: 24px;
             margin: 4px 0;
-            gap: 20px;
         }
 
         .tooltip-label {
             color: #888;
         }
 
-        .positive {
-            color: #00ff88;
-        }
-
-        .negative {
-            color: #ff4d4d;
-        }
+        .positive { color: #00ff88; }
+        .negative { color: #ff4d4d; }
 
         .loading-overlay {
             position: fixed;
             top: 20px;
             right: 20px;
             background: rgba(18, 19, 26, 0.95);
-            padding: 12px;
+            padding: 12px 16px;
             border-radius: 8px;
             font-size: 13px;
             color: #888;
@@ -139,12 +148,14 @@
             background: #232323;
             border-radius: 2px;
             overflow: hidden;
+            width: 200px;
         }
 
         .progress-fill {
             height: 100%;
             background: #00ff88;
             transition: width 0.3s ease;
+            width: 0%;
         }
     </style>
 </head>
@@ -164,14 +175,14 @@
     <div class="loading-overlay">
         <div id="loading-status">Loading market data...</div>
         <div class="progress-bar">
-            <div class="progress-fill" style="width: 0%"></div>
+            <div class="progress-fill"></div>
         </div>
     </div>
 
     <script>
-        // ↓↓↓ ADD YOUR API KEY HERE ↓↓↓
+        // ↓↓↓ ADD YOUR FINNHUB API KEY HERE ↓↓↓
         const FINNHUB_API_KEY = 'cus1ashr01qt2nchqnqgcus1ashr01qt2nchqnr0';
-        // ↑↑↑ ADD YOUR API KEY HERE ↑↑↑
+        // ↑↑↑ ADD YOUR FINNHUB API KEY HERE ↑↑↑
 
         // Stock universe - 100+ major stocks grouped by sector
         const sectors = {
@@ -216,7 +227,8 @@
                             high: quote.h,
                             low: quote.l,
                             volume: quote.v,
-                            previousClose: quote.pc
+                            previousClose: quote.pc,
+                            marketCap: quote.c * quote.v // Simplified market cap calculation
                         }))
                 );
 
@@ -244,16 +256,14 @@
             };
 
             for (const [sectorName, sectorData] of Object.entries(sectors)) {
-                // Process 5 stocks at a time to respect rate limits
-                const batchSize = 5;
+                const batchSize = 5; // Process 5 stocks at a time
                 const stockData = [];
                 
                 for (let i = 0; i < sectorData.stocks.length; i += batchSize) {
                     const batch = sectorData.stocks.slice(i, i + batchSize);
                     const batchData = await fetchBatchData(batch);
                     stockData.push(...batchData);
-                    // Add delay between batches
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Delay between batches
                 }
 
                 if (stockData.length > 0) {
@@ -266,6 +276,95 @@
             }
 
             return marketData;
+        }
+
+        function createVisualization(data) {
+            const container = document.querySelector("#market-map");
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            d3.select("#market-map").html("");
+
+            const treemap = d3.treemap()
+                .size([width, height])
+                .paddingTop(30)
+                .paddingRight(3)
+                .paddingBottom(3)
+                .paddingLeft(3)
+                .round(true);
+
+            const root = d3.hierarchy(data)
+                .sum(d => d.marketCap || 1) // Use marketCap for sizing
+                .sort((a, b) => (b.value || 0) - (a.value || 0));
+
+            treemap(root);
+
+            const svg = d3.select("#market-map")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            // Create sectors
+            const sectors = svg.selectAll(".sector")
+                .data(root.children)
+                .enter()
+                .append("g")
+                .attr("class", "sector")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            // Add sector backgrounds
+            sectors.append("rect")
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", d => d.y1 - d.y0)
+                .attr("fill", "#1a1a1a")
+                .attr("stroke", "#232323");
+
+            // Add sector labels
+            sectors.append("text")
+                .attr("class", "sector-label")
+                .attr("x", 10)
+                .attr("y", 20)
+                .text(d => `${d.data.name} (${d.children.length})`);
+
+            // Create stock tiles
+            const cell = sectors.selectAll(".stock")
+                .data(d => d.leaves())
+                .enter()
+                .append("g")
+                .attr("class", "stock")
+                .attr("transform", d => `translate(${d.x0 - d.parent.x0},${d.y0 - d.parent.y0})`);
+
+            // Add stock rectangles
+            cell.append("rect")
+                .attr("class", "tile")
+                .attr("width", d => Math.max(d.x1 - d.x0, 80))
+                .attr("height", d => Math.max(d.y1 - d.y0, 60))
+                .attr("fill", d => getColor(d.data.change))
+                .on("mouseover", showTooltip)
+                .on("mouseout", hideTooltip);
+
+            // Add stock symbols
+            cell.append("text")
+                .attr("class", "tile-label")
+                .attr("x", 6)
+                .attr("y", 16)
+                .text(d => d.data.name)
+                .style("font-weight", "600");
+
+            // Add price
+            cell.append("text")
+                .attr("class", "tile-label")
+                .attr("x", 6)
+                .attr("y", 32)
+                .text(d => d.data.price ? `$${d.data.price.toFixed(2)}` : '');
+
+            // Add change percentage
+            cell.append("text")
+                .attr("class", "tile-label")
+                .attr("x", 6)
+                .attr("y", 48)
+                .attr("fill", d => d.data.change >= 0 ? "#00ff88" : "#ff4d4d")
+                .text(d => d.data.change ? `${d.data.change.toFixed(1)}%` : '');
         }
 
         function getColor(change) {
@@ -283,87 +382,6 @@
             if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(1) + 'M';
             if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + 'K';
             return num.toFixed(0);
-        }
-
-        function createVisualization(data) {
-            const width = document.querySelector("#market-map").clientWidth;
-            const height = 800;
-
-            const treemap = d3.treemap()
-                .size([width, height])
-                .paddingTop(28)
-                .paddingRight(3)
-                .paddingBottom(3)
-                .paddingLeft(3)
-                .round(true);
-
-            const root = d3.hierarchy(data)
-                .sum(d => d.volume)
-                .sort((a, b) => b.value - a.value);
-
-            treemap(root);
-
-            d3.select("#market-map").html("");
-
-            const svg = d3.select("#market-map")
-                .append("svg")
-                .attr("width", width)
-                .attr("height", height);
-
-            const sectors = svg.selectAll(".sector")
-                .data(root.children)
-                .enter()
-                .append("g")
-                .attr("class", "sector")
-                .attr("transform", d => `translate(${d.x0},${d.y0})`);
-
-            sectors.append("rect")
-                .attr("width", d => d.x1 - d.x0)
-                .attr("height", d => d.y1 - d.y0)
-                .attr("fill", "#1a1a1a");
-
-            sectors.append("text")
-                .attr("class", "sector-label")
-                .attr("x", 10)
-                .attr("y", 20)
-                .text(d => `${d.data.name} (${d.children.length})`);
-
-            const cell = sectors.selectAll(".stock")
-                .data(d => d.leaves())
-                .enter()
-                .append("g")
-                .attr("class", "stock")
-                .attr("transform", d => `translate(${d.x0 - d.parent.x0},${d.y0 - d.parent.y0})`);
-
-            cell.append("rect")
-                .attr("class", "tile")
-                .attr("width", d => d.x1 - d.x0)
-                .attr("height", d => d.y1 - d.y0)
-                .attr("fill", d => getColor(d.data.change))
-                .on("mouseover", showTooltip)
-                .on("mouseout", hideTooltip);
-
-            cell.append("text")
-                .attr("class", "tile-label")
-                .attr("x", 4)
-                .attr("y", 14)
-                .text(d => d.data.name);
-
-            cell.append("text")
-                .attr("class", "tile-label")
-                .attr("x", 4)
-                .attr("y", 26)
-                .text(d => `$${d.data.price?.toFixed(2)}`);
-
-            cell.append("text")
-                .attr("class", "tile-label")
-                .attr("x", 4)
-                .attr("y", 38)
-                .attr("fill", d => d.data.change >= 0 ? "#00ff88" : "#ff4d4d")
-                .text(d => `${d.data.change?.toFixed(1)}%`);
-
-            document.getElementById('last-update').textContent = 
-                new Date().toLocaleTimeString();
         }
 
         function showTooltip(event, d) {
@@ -408,6 +426,8 @@
                 updateProgress();
                 const data = await loadMarketData();
                 createVisualization(data);
+                document.getElementById('last-update').textContent = 
+                    new Date().toLocaleTimeString();
                 document.querySelector('.loading-overlay').style.display = 'none';
             } catch (error) {
                 console.error("Error updating visualization:", error);
