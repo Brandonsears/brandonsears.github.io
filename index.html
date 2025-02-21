@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Market Heat Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .tile {
+            stroke: #fff;
+            stroke-width: 1px;
+        }
+        
+        .tile-label {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            fill: white;
+            pointer-events: none;
+        }
+        
+        #tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="market-map"></div>
+    <div id="tooltip"></div>
+
+<script>
+const data = {
+    children: [
+        {
+            name: "Technology",
+            children: [
+                { name: "AAPL", value: 2800, change: 2.5 },
+                { name: "MSFT", value: 2300, change: -1.2 },
+                { name: "GOOGL", value: 1800, change: 1.8 }
+            ]
+        },
+        {
+            name: "Finance",
+            children: [
+                { name: "JPM", value: 1200, change: -0.8 },
+                { name: "BAC", value: 800, change: -2.1 },
+                { name: "WFC", value: 600, change: 0.5 }
+            ]
+        }
+        // Add more sectors and stocks as needed
+    ]
+};
+
+const width = 1000;
+const height = 600;
+
+const treemap = d3.treemap()
+    .size([width, height])
+    .padding(1);
+
+const root = d3.hierarchy(data)
+    .sum(d => d.value)
+    .sort((a, b) => b.value - a.value);
+
+treemap(root);
+
+const svg = d3.select("#market-map")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+const getColor = (change) => {
+    if (change > 0) return d3.interpolateRgb("#004d00", "#00ff00")(change/5);
+    return d3.interpolateRgb("#4d0000", "#ff0000")(-change/5);
+};
+
+const cell = svg.selectAll("g")
+    .data(root.leaves())
+    .enter()
+    .append("g")
+    .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+cell.append("rect")
+    .attr("class", "tile")
+    .attr("width", d => d.x1 - d.x0)
+    .attr("height", d => d.y1 - d.y0)
+    .attr("fill", d => getColor(d.data.change))
+    .on("mouseover", function(event, d) {
+        const tooltip = d3.select("#tooltip");
+        tooltip.style("display", "block")
+            .html(`
+                ${d.data.name}<br>
+                Market Cap: $${d.data.value}B<br>
+                Change: ${d.data.change}%
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY + 10) + "px");
+    })
+    .on("mouseout", function() {
+        d3.select("#tooltip").style("display", "none");
+    });
+
+cell.append("text")
+    .attr("class", "tile-label")
+    .attr("x", 5)
+    .attr("y", 20)
+    .text(d => d.data.name);
+</script>
+</body>
+</html>
