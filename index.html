@@ -6,380 +6,288 @@
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* Previous styles remain, adding new ones */
-        .data-status {
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0b0e;
+            color: #ffffff;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #232323;
+            margin-bottom: 20px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 500;
+            color: #ffffff;
+        }
+
+        .status-bar {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #888;
+        }
+
+        .map-container {
+            background: #12131A;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+        }
+
+        .tile {
+            stroke: #0a0b0e;
+            stroke-width: 1px;
+            transition: all 0.3s ease;
+        }
+
+        .tile:hover {
+            stroke: #ffffff;
+            stroke-width: 2px;
+            filter: brightness(1.2);
+        }
+
+        .tile-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            fill: white;
+            pointer-events: none;
+        }
+
+        .sector-label {
+            font-size: 14px;
+            font-weight: 500;
+            fill: #ffffff;
+            opacity: 0.9;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(18, 19, 26, 0.95);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #232323;
+            z-index: 1000;
+        }
+
+        .tooltip-header {
+            font-weight: 500;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .tooltip-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            gap: 20px;
+        }
+
+        .tooltip-label {
+            color: #888;
+        }
+
+        .positive {
+            color: #00ff88;
+        }
+
+        .negative {
+            color: #ff4d4d;
+        }
+
+        .loading-overlay {
             position: fixed;
             top: 20px;
             right: 20px;
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(18, 19, 26, 0.95);
             padding: 12px;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             font-size: 13px;
+            color: #888;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #232323;
             z-index: 1000;
         }
-        
+
         .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: #eee;
-            border-radius: 2px;
             margin-top: 8px;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: #1a73e8;
+            height: 4px;
+            background: #232323;
             border-radius: 2px;
-            transition: width 0.3s ease;
+            overflow: hidden;
         }
 
-        /* Add more styles here... */
+        .progress-fill {
+            height: 100%;
+            background: #00ff88;
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
-    <!-- Previous HTML structure remains -->
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Market Heat Map</h1>
+            <div class="status-bar">
+                Last updated: <span id="last-update">Loading...</span>
+            </div>
+        </div>
+        <div class="map-container">
+            <div id="market-map"></div>
+        </div>
+    </div>
+    <div id="tooltip"></div>
+    <div class="loading-overlay">
+        <div id="loading-status">Loading market data...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%"></div>
+        </div>
+    </div>
 
     <script>
-        // Data Storage System
-        class MarketDataStore {
-            constructor() {
-                this.stockData = new Map(); // Real-time data
-                this.cachedData = new Map(); // Cached data
-                this.lastUpdateTime = new Map(); // Track data freshness
-                this.pendingUpdates = new Set(); // Track ongoing updates
-                this.updateCallbacks = new Set(); // Callbacks for UI updates
-            }
+        // ↓↓↓ ADD YOUR API KEY HERE ↓↓↓
+        const FINNHUB_API_KEY = 'cus1ashr01qt2nchqnqgcus1ashr01qt2nchqnr0';
+        // ↑↑↑ ADD YOUR API KEY HERE ↑↑↑
 
-            // Store new data
-            updateStock(symbol, data) {
-                this.stockData.set(symbol, data);
-                this.lastUpdateTime.set(symbol, Date.now());
-                this.cachedData.set(symbol, data); // Update cache
-                this.notifyUpdateCallbacks(symbol);
-            }
-
-            // Get data with fallback to cache
-            getStock(symbol) {
-                return this.stockData.get(symbol) || this.cachedData.get(symbol);
-            }
-
-            // Check data freshness
-            isDataFresh(symbol) {
-                const lastUpdate = this.lastUpdateTime.get(symbol);
-                return lastUpdate && (Date.now() - lastUpdate < 300000); // 5 minutes
-            }
-
-            // Register update callback
-            onUpdate(callback) {
-                this.updateCallbacks.add(callback);
-            }
-
-            // Notify all callbacks
-            notifyUpdateCallbacks(symbol) {
-                this.updateCallbacks.forEach(callback => callback(symbol));
-            }
-        }
-
-        // Initialize data store
-        const marketData = new MarketDataStore();
-
-        // Sector definitions with full stock lists
+        // Stock universe - 100+ major stocks grouped by sector
         const sectors = {
             "Technology": {
                 color: "#1a73e8",
-                stocks: [
-                    "AAPL", "MSFT", "GOOGL", "NVDA", "AVGO", "CSCO", "ADBE", "CRM", "INTC", "AMD",
-                    "QCOM", "TXN", "AMAT", "MU", "ADI", "LRCX", "KLAC", "SNPS", "CDNS", "NXPI",
-                    "MCHP", "TEL", "STM", "KEYS", "FTV", "APH", "DELL", "HPQ", "HPE", "CTSH",
-                    "ZBRA", "JNPR", "NTAP", "WDC", "SWKS", "XLNX", "MXIM", "MRVL", "ON", "GLIU"
-                ]
+                stocks: ["AAPL", "MSFT", "GOOGL", "NVDA", "TSM", "AVGO", "CSCO", "ADBE", "CRM", "INTC", "AMD", "QCOM", "TXN", "AMAT", "MU", "ADI", "LRCX", "KLAC", "NOW", "SNPS"]
             },
             "Financial": {
                 color: "#34a853",
-                stocks: [
-                    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "PNC",
-                    "TFC", "USB", "COF", "BK", "SPGI", "MCO", "CB", "MMC", "AON", "TRV",
-                    "ALL", "PGR", "MET", "PRU", "AIG", "AFL", "TROW", "NTRS", "STT", "DFS"
-                ]
+                stocks: ["JPM", "BAC", "WFC", "GS", "MS", "BLK", "SCHW", "AXP", "C", "SPGI", "CB", "PNC", "TFC", "USB", "MMC", "AON", "TRV", "PRU", "MET", "AIG"]
             },
-            // Add more sectors here...
+            "Healthcare": {
+                color: "#4285f4",
+                stocks: ["JNJ", "UNH", "LLY", "PFE", "MRK", "ABBV", "TMO", "DHR", "ABT", "BMY", "AMGN", "CVS", "ELV", "SYK", "BSX", "ISRG", "HCA", "CI", "BDX", "ZTS"]
+            },
+            "Consumer": {
+                color: "#fbbc04",
+                stocks: ["AMZN", "WMT", "PG", "COST", "KO", "PEP", "MCD", "NKE", "DIS", "NFLX", "HD", "LOW", "TGT", "SBUX", "YUM", "MAR", "MO", "EL", "NEM", "GIS"]
+            },
+            "Industrial": {
+                color: "#ea4335",
+                stocks: ["CAT", "UPS", "HON", "RTX", "BA", "LMT", "GE", "MMM", "DE", "EMR", "ITW", "ETN", "PH", "CMI", "ROK", "LHX", "TT", "RSG", "IR", "DOV"]
+            },
+            "Energy": {
+                color: "#8e24aa",
+                stocks: ["XOM", "CVX", "SHEL", "TTE", "COP", "BP", "ENB", "SLB", "EOG", "PXD", "MPC", "PSX", "VLO", "OXY", "WMB", "KMI", "HES", "HAL", "DVN", "BKR"]
+            }
         };
 
-        // Batch data fetching
+        let loadedStocks = 0;
+        const totalStocks = Object.values(sectors).reduce((sum, sector) => sum + sector.stocks.length, 0);
+
         async function fetchBatchData(symbols) {
             try {
-                const queries = symbols.map(symbol => `${symbol}`).join(',');
-                const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${queries}`);
-                const data = await response.json();
-                
-                if (data.quoteResponse && data.quoteResponse.result) {
-                    data.quoteResponse.result.forEach(quote => {
-                        marketData.updateStock(quote.symbol, {
-                            name: quote.symbol,
-                            price: quote.regularMarketPrice,
-                            change: quote.regularMarketChangePercent,
-                            marketCap: quote.marketCap,
-                            volume: quote.regularMarketVolume
-                        });
-                    });
-                }
-            } catch (error) {
-                console.error('Batch fetch error:', error);
-            }
-        }
-
-        // Progress tracking
-        let totalStocks = 0;
-        let loadedStocks = 0;
-
-        Object.values(sectors).forEach(sector => {
-            totalStocks += sector.stocks.length;
-        });
-
-        function updateProgress() {
-            const progress = (loadedStocks / totalStocks) * 100;
-            document.querySelector('.progress-fill').style.width = `${progress}%`;
-            document.querySelector('.progress-text').textContent = 
-                `Loading: ${loadedStocks}/${totalStocks} stocks`;
-        }
-
-        // Batch loading system
-        async function loadAllData() {
-            loadedStocks = 0;
-            
-            // Load high priority stocks first
-            const highPriorityStocks = new Set([
-                "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ"
-            ]);
-
-            // First wave: High priority stocks
-            const priorityBatch = [...highPriorityStocks];
-            await fetchBatchData(priorityBatch);
-            loadedStocks += priorityBatch.length;
-            updateProgress();
-            updateVisualization();
-
-            // Second wave: Rest of the stocks in batches
-            for (const sector of Object.values(sectors)) {
-                const regularStocks = sector.stocks.filter(s => !highPriorityStocks.has(s));
-                
-                for (let i = 0; i < regularStocks.length; i += BATCH_SIZE) {
-                    const batch = regularStocks.slice(i, i + BATCH_SIZE);
-                    await fetchBatchData(batch);
-                    loadedStocks += batch.length;
-                    updateProgress();
-                    updateVisualization();
-                    await new Promise(r => setTimeout(r, BATCH_DELAY));
-                }
-            }
-        }
-
-        // Continue to Part 2...
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Market Heat Map Pro</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <style>
-        /* Previous styles remain, adding new ones */
-        .data-status {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 12px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-size: 13px;
-            z-index: 1000;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: #eee;
-            border-radius: 2px;
-            margin-top: 8px;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: #1a73e8;
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-
-        /* Add more styles here... */
-    </style>
-</head>
-<body>
-    <!-- Previous HTML structure remains -->
-
-    <script>
-        // Data Storage System
-        class MarketDataStore {
-            constructor() {
-                this.stockData = new Map(); // Real-time data
-                this.cachedData = new Map(); // Cached data
-                this.lastUpdateTime = new Map(); // Track data freshness
-                this.pendingUpdates = new Set(); // Track ongoing updates
-                this.updateCallbacks = new Set(); // Callbacks for UI updates
-            }
-
-            // Store new data
-            updateStock(symbol, data) {
-                this.stockData.set(symbol, data);
-                this.lastUpdateTime.set(symbol, Date.now());
-                this.cachedData.set(symbol, data); // Update cache
-                this.notifyUpdateCallbacks(symbol);
-            }
-
-            // Get data with fallback to cache
-            getStock(symbol) {
-                return this.stockData.get(symbol) || this.cachedData.get(symbol);
-            }
-
-            // Check data freshness
-            isDataFresh(symbol) {
-                const lastUpdate = this.lastUpdateTime.get(symbol);
-                return lastUpdate && (Date.now() - lastUpdate < 300000); // 5 minutes
-            }
-
-            // Register update callback
-            onUpdate(callback) {
-                this.updateCallbacks.add(callback);
-            }
-
-            // Notify all callbacks
-            notifyUpdateCallbacks(symbol) {
-                this.updateCallbacks.forEach(callback => callback(symbol));
-            }
-        }
-
-        // Initialize data store
-        const marketData = new MarketDataStore();
-
-        // Sector definitions with full stock lists
-        const sectors = {
-            "Technology": {
-                color: "#1a73e8",
-                stocks: [
-                    "AAPL", "MSFT", "GOOGL", "NVDA", "AVGO", "CSCO", "ADBE", "CRM", "INTC", "AMD",
-                    "QCOM", "TXN", "AMAT", "MU", "ADI", "LRCX", "KLAC", "SNPS", "CDNS", "NXPI",
-                    "MCHP", "TEL", "STM", "KEYS", "FTV", "APH", "DELL", "HPQ", "HPE", "CTSH",
-                    "ZBRA", "JNPR", "NTAP", "WDC", "SWKS", "XLNX", "MXIM", "MRVL", "ON", "GLIU"
-                ]
-            },
-            "Financial": {
-                color: "#34a853",
-                stocks: [
-                    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "PNC",
-                    "TFC", "USB", "COF", "BK", "SPGI", "MCO", "CB", "MMC", "AON", "TRV",
-                    "ALL", "PGR", "MET", "PRU", "AIG", "AFL", "TROW", "NTRS", "STT", "DFS"
-                ]
-            },
-            // Add more sectors here...
-        };
-
-        // Batch data fetching
-        async function fetchBatchData(symbols) {
-            try {
-                const queries = symbols.map(symbol => `${symbol}`).join(',');
-                const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${queries}`);
-                const data = await response.json();
-                
-                if (data.quoteResponse && data.quoteResponse.result) {
-                    data.quoteResponse.result.forEach(quote => {
-                        marketData.updateStock(quote.symbol, {
-                            name: quote.symbol,
-                            price: quote.regularMarketPrice,
-                            change: quote.regularMarketChangePercent,
-                            marketCap: quote.marketCap,
-                            volume: quote.regularMarketVolume
-                        });
-                    });
-                }
-            } catch (error) {
-                console.error('Batch fetch error:', error);
-            }
-        }
-
-        // Progress tracking
-        let totalStocks = 0;
-        let loadedStocks = 0;
-
-        Object.values(sectors).forEach(sector => {
-            totalStocks += sector.stocks.length;
-        });
-
-        function updateProgress() {
-            const progress = (loadedStocks / totalStocks) * 100;
-            document.querySelector('.progress-fill').style.width = `${progress}%`;
-            document.querySelector('.progress-text').textContent = 
-                `Loading: ${loadedStocks}/${totalStocks} stocks`;
-        }
-
-        // Batch loading system
-        async function loadAllData() {
-            loadedStocks = 0;
-            
-            // Load high priority stocks first
-            const highPriorityStocks = new Set([
-                "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ"
-            ]);
-
-            // First wave: High priority stocks
-            const priorityBatch = [...highPriorityStocks];
-            await fetchBatchData(priorityBatch);
-            loadedStocks += priorityBatch.length;
-            updateProgress();
-            updateVisualization();
-
-            // Second wave: Rest of the stocks in batches
-            for (const sector of Object.values(sectors)) {
-                const regularStocks = sector.stocks.filter(s => !highPriorityStocks.has(s));
-                
-                for (let i = 0; i < regularStocks.length; i += BATCH_SIZE) {
-                    const batch = regularStocks.slice(i, i + BATCH_SIZE);
-                    await fetchBatchData(batch);
-                    loadedStocks += batch.length;
-                    updateProgress();
-                    updateVisualization();
-                    await new Promise(r => setTimeout(r, BATCH_DELAY));
-                }
-            }
-        }
-
-        // Continue to Part 2...
-        // Visualization code
-        function createVisualization(forceUpdate = false) {
-            const width = document.querySelector("#market-map").clientWidth;
-            const height = 800; // Increased height for better visibility
-
-            // Prepare data structure for D3
-            const hierarchyData = {
-                name: "Market Map",
-                children: Object.entries(sectors).map(([sectorName, sectorData]) => ({
-                    name: sectorName,
-                    color: sectorData.color,
-                    children: sectorData.stocks
-                        .map(symbol => marketData.getStock(symbol))
-                        .filter(stock => stock !== undefined)
-                        .map(stock => ({
-                            ...stock,
-                            isFresh: marketData.isDataFresh(stock.name)
+                const promises = symbols.map(symbol =>
+                    fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`)
+                        .then(response => response.json())
+                        .then(quote => ({
+                            name: symbol,
+                            price: quote.c,
+                            change: ((quote.c - quote.pc) / quote.pc * 100),
+                            high: quote.h,
+                            low: quote.l,
+                            volume: quote.v,
+                            previousClose: quote.pc
                         }))
-                }))
+                );
+
+                const results = await Promise.all(promises);
+                loadedStocks += symbols.length;
+                updateProgress();
+                return results.filter(result => result.price);
+            } catch (error) {
+                console.error('Batch fetch error:', error);
+                return [];
+            }
+        }
+
+        function updateProgress() {
+            const progress = (loadedStocks / totalStocks) * 100;
+            document.querySelector('.progress-fill').style.width = `${progress}%`;
+            document.getElementById('loading-status').textContent = 
+                `Loading: ${loadedStocks}/${totalStocks} stocks`;
+        }
+
+        async function loadMarketData() {
+            const marketData = {
+                name: "Market",
+                children: []
             };
 
-            // Clear previous visualization if forcing update
-            if (forceUpdate) {
-                d3.select("#market-map").html("");
+            for (const [sectorName, sectorData] of Object.entries(sectors)) {
+                // Process 5 stocks at a time to respect rate limits
+                const batchSize = 5;
+                const stockData = [];
+                
+                for (let i = 0; i < sectorData.stocks.length; i += batchSize) {
+                    const batch = sectorData.stocks.slice(i, i + batchSize);
+                    const batchData = await fetchBatchData(batch);
+                    stockData.push(...batchData);
+                    // Add delay between batches
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+                if (stockData.length > 0) {
+                    marketData.children.push({
+                        name: sectorName,
+                        color: sectorData.color,
+                        children: stockData
+                    });
+                }
             }
+
+            return marketData;
+        }
+
+        function getColor(change) {
+            if (!change) return "#333333";
+            if (change > 3) return "#00ff88";
+            if (change > 1) return "#00cc66";
+            if (change > 0) return "#00aa44";
+            if (change > -1) return "#ff4d4d";
+            if (change > -3) return "#cc0000";
+            return "#990000";
+        }
+
+        function formatNumber(num) {
+            if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(1) + 'B';
+            if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+            if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+            return num.toFixed(0);
+        }
+
+        function createVisualization(data) {
+            const width = document.querySelector("#market-map").clientWidth;
+            const height = 800;
 
             const treemap = d3.treemap()
                 .size([width, height])
@@ -389,19 +297,19 @@
                 .paddingLeft(3)
                 .round(true);
 
-            const root = d3.hierarchy(hierarchyData)
-                .sum(d => d.marketCap || 0)
-                .sort((a, b) => (b.value || 0) - (a.value || 0));
+            const root = d3.hierarchy(data)
+                .sum(d => d.volume)
+                .sort((a, b) => b.value - a.value);
 
             treemap(root);
+
+            d3.select("#market-map").html("");
 
             const svg = d3.select("#market-map")
                 .append("svg")
                 .attr("width", width)
-                .attr("height", height)
-                .style("font-family", "Inter, sans-serif");
+                .attr("height", height);
 
-            // Create sector groups
             const sectors = svg.selectAll(".sector")
                 .data(root.children)
                 .enter()
@@ -409,117 +317,81 @@
                 .attr("class", "sector")
                 .attr("transform", d => `translate(${d.x0},${d.y0})`);
 
-            // Add sector backgrounds
             sectors.append("rect")
-                .attr("class", "sector-bg")
                 .attr("width", d => d.x1 - d.x0)
                 .attr("height", d => d.y1 - d.y0)
-                .attr("fill", "#f8f9fa")
-                .attr("stroke", "#dadce0");
-
-            // Add sector headers
-            sectors.append("rect")
-                .attr("class", "sector-header")
-                .attr("width", d => d.x1 - d.x0)
-                .attr("height", 28)
-                .attr("fill", d => d.data.color)
-                .attr("opacity", 0.1);
+                .attr("fill", "#1a1a1a");
 
             sectors.append("text")
                 .attr("class", "sector-label")
                 .attr("x", 10)
                 .attr("y", 20)
-                .text(d => `${d.data.name} (${d.children.length})`)
-                .attr("fill", "#202124")
-                .style("font-weight", 500);
+                .text(d => `${d.data.name} (${d.children.length})`);
 
-            // Create stock tiles
-            const cells = sectors.selectAll(".stock")
+            const cell = sectors.selectAll(".stock")
                 .data(d => d.leaves())
                 .enter()
                 .append("g")
                 .attr("class", "stock")
                 .attr("transform", d => `translate(${d.x0 - d.parent.x0},${d.y0 - d.parent.y0})`);
 
-            // Add stock rectangles
-            cells.append("rect")
+            cell.append("rect")
                 .attr("class", "tile")
                 .attr("width", d => d.x1 - d.x0)
                 .attr("height", d => d.y1 - d.y0)
-                .attr("fill", d => getStockColor(d.data.change))
-                .attr("opacity", d => d.data.isFresh ? 1 : 0.7)
+                .attr("fill", d => getColor(d.data.change))
                 .on("mouseover", showTooltip)
                 .on("mouseout", hideTooltip);
 
-            // Add stock labels
-            cells.append("text")
+            cell.append("text")
                 .attr("class", "tile-label")
                 .attr("x", 4)
                 .attr("y", 14)
-                .text(d => d.data.name)
-                .attr("fill", "white")
-                .style("font-size", "11px")
-                .style("font-weight", 500);
+                .text(d => d.data.name);
 
-            // Add price labels
-            cells.append("text")
-                .attr("class", "price-label")
+            cell.append("text")
+                .attr("class", "tile-label")
                 .attr("x", 4)
                 .attr("y", 26)
-                .text(d => `$${d.data.price?.toFixed(2) || '0.00'}`)
-                .attr("fill", "rgba(255,255,255,0.9)")
-                .style("font-size", "10px");
+                .text(d => `$${d.data.price?.toFixed(2)}`);
 
-            // Add change percentage
-            cells.append("text")
-                .attr("class", "change-label")
+            cell.append("text")
+                .attr("class", "tile-label")
                 .attr("x", 4)
                 .attr("y", 38)
-                .text(d => `${d.data.change?.toFixed(1) || '0.0'}%`)
                 .attr("fill", d => d.data.change >= 0 ? "#00ff88" : "#ff4d4d")
-                .style("font-size", "10px");
+                .text(d => `${d.data.change?.toFixed(1)}%`);
+
+            document.getElementById('last-update').textContent = 
+                new Date().toLocaleTimeString();
         }
 
-        // Color scale for stock changes
-        function getStockColor(change) {
-            if (!change) return "#666666";
-            if (change > 3) return "#137333";
-            if (change > 1) return "#1e8e3e";
-            if (change > 0) return "#34a853";
-            if (change > -1) return "#ea4335";
-            if (change > -3) return "#d93025";
-            return "#c5221f";
-        }
-
-        // Tooltip functions
         function showTooltip(event, d) {
             const tooltip = d3.select("#tooltip");
-            const stock = d.data;
-            
             tooltip.style("display", "block")
                 .html(`
-                    <div class="tooltip-header">${stock.name}</div>
+                    <div class="tooltip-header">${d.data.name}</div>
                     <div class="tooltip-row">
                         <span class="tooltip-label">Price:</span>
-                        <span>$${stock.price?.toFixed(2) || '0.00'}</span>
+                        <span>$${d.data.price?.toFixed(2)}</span>
                     </div>
                     <div class="tooltip-row">
                         <span class="tooltip-label">Change:</span>
-                        <span class="${stock.change >= 0 ? 'positive' : 'negative'}">
-                            ${stock.change?.toFixed(2) || '0.00'}%
+                        <span class="${d.data.change >= 0 ? 'positive' : 'negative'}">
+                            ${d.data.change?.toFixed(2)}%
                         </span>
                     </div>
                     <div class="tooltip-row">
-                        <span class="tooltip-label">Market Cap:</span>
-                        <span>${formatMarketCap(stock.marketCap)}</span>
-                    </div>
-                    <div class="tooltip-row">
                         <span class="tooltip-label">Volume:</span>
-                        <span>${formatVolume(stock.volume)}</span>
+                        <span>${formatNumber(d.data.volume)}</span>
                     </div>
                     <div class="tooltip-row">
-                        <span class="tooltip-label">Data Age:</span>
-                        <span>${stock.isFresh ? 'Real-time' : 'Cached'}</span>
+                        <span class="tooltip-label">High:</span>
+                        <span>$${d.data.high?.toFixed(2)}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Low:</span>
+                        <span>$${d.data.low?.toFixed(2)}</span>
                     </div>
                 `)
                 .style("left", `${event.pageX + 10}px`)
@@ -530,30 +402,26 @@
             d3.select("#tooltip").style("display", "none");
         }
 
-        // Utility functions
-        function formatMarketCap(marketCap) {
-            if (!marketCap) return 'N/A';
-            if (marketCap >= 1e12) return `$${(marketCap / 1e12).toFixed(1)}T`;
-            if (marketCap >= 1e9) return `$${(marketCap / 1e9).toFixed(1)}B`;
-            return `$${(marketCap / 1e6).toFixed(1)}M`;
+        async function updateVisualization() {
+            try {
+                loadedStocks = 0;
+                updateProgress();
+                const data = await loadMarketData();
+                createVisualization(data);
+                document.querySelector('.loading-overlay').style.display = 'none';
+            } catch (error) {
+                console.error("Error updating visualization:", error);
+                document.getElementById('loading-status').textContent = 
+                    "Error loading market data";
+            }
         }
 
-        function formatVolume(volume) {
-            if (!volume) return 'N/A';
-            if (volume >= 1e9) return `${(volume / 1e9).toFixed(1)}B`;
-            if (volume >= 1e6) return `${(volume / 1e6).toFixed(1)}M`;
-            return volume.toLocaleString();
-        }
+        // Initial load
+        updateVisualization();
 
-        // Initialize visualization
-        createVisualization();
-        
-        // Start data loading
-        loadAllData();
-
-        // Refresh data periodically
-        setInterval(loadAllData, 240000); // Every 4 minutes
-
+        // Refresh every 5 minutes
+        setInterval(updateVisualization, 300000);
     </script>
 </body>
 </html>
+
