@@ -1,89 +1,249 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Keep all the previous head content and styles the same as before -->
+    <meta charset="UTF-8">
+    <title>Market Heat Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Google Sans', Arial, sans-serif;
+            background-color: #ffffff;
+            color: #202124;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #dadce0;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 400;
+            color: #202124;
+        }
+
+        .map-container {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            border: 1px solid #dadce0;
+            box-shadow: 0 1px 2px rgba(60,64,67,0.3);
+        }
+
+        .tile {
+            stroke: #ffffff;
+            stroke-width: 1px;
+            transition: opacity 0.2s;
+        }
+
+        .tile:hover {
+            opacity: 0.8;
+        }
+
+        .tile-label {
+            font-family: 'Google Sans', Arial, sans-serif;
+            font-size: 12px;
+            fill: white;
+            pointer-events: none;
+        }
+
+        .sector-label {
+            font-size: 14px;
+            font-weight: 500;
+            fill: #202124;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(60,64,67,0.3);
+            border: 1px solid #dadce0;
+            display: none;
+            z-index: 1000;
+        }
+
+        .tooltip-header {
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .tooltip-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            margin: 4px 0;
+        }
+
+        .tooltip-label {
+            color: #5f6368;
+        }
+
+        .positive { color: #137333; }
+        .negative { color: #c5221f; }
+    </style>
 </head>
 <body>
-    <!-- Keep all the previous body HTML the same until the script tag -->
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Market Heat Map</h1>
+        </div>
+        <div class="map-container">
+            <div id="market-map"></div>
+        </div>
+    </div>
+    <div id="tooltip"></div>
 
     <script>
-        // Add your API key here
-        const API_KEY = 'QVPBQVP0TEWP5B52'; // Replace with your Alpha Vantage API key
-
-        const sectorStocks = {
-            "Technology": ["AAPL", "MSFT", "GOOGL"],
-            "Financial": ["JPM", "BAC", "GS"],
-            "Healthcare": ["JNJ", "PFE", "UNH"],
+        // Static data to ensure visualization works
+        const initialData = {
+            name: "Market Map",
+            children: [
+                {
+                    name: "Technology",
+                    children: [
+                        { name: "AAPL", marketCap: 2800000000000, price: 178.92, change: 2.5, volume: "86.5M" },
+                        { name: "MSFT", marketCap: 2300000000000, price: 402.15, change: -1.2, volume: "22.1M" },
+                        { name: "GOOGL", marketCap: 1800000000000, price: 142.65, change: 1.8, volume: "25.3M" }
+                    ]
+                },
+                {
+                    name: "Financial",
+                    children: [
+                        { name: "JPM", marketCap: 500000000000, price: 172.34, change: -0.8, volume: "8.2M" },
+                        { name: "BAC", marketCap: 300000000000, price: 33.47, change: -2.1, volume: "42.1M" },
+                        { name: "GS", marketCap: 200000000000, price: 383.91, change: 0.5, volume: "15.6M" }
+                    ]
+                },
+                {
+                    name: "Healthcare",
+                    children: [
+                        { name: "JNJ", marketCap: 400000000000, price: 162.38, change: 1.2, volume: "5.4M" },
+                        { name: "PFE", marketCap: 300000000000, price: 27.43, change: -1.5, volume: "28.9M" },
+                        { name: "UNH", marketCap: 350000000000, price: 502.16, change: 0.8, volume: "2.1M" }
+                    ]
+                }
+            ]
         };
 
-        async function fetchStockData(symbol) {
-            try {
-                const response = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`);
-                const data = await response.json();
-                const quote = data['Global Quote'];
-                
-                if (!quote) {
-                    throw new Error('No data received');
-                }
-
-                return {
-                    name: symbol,
-                    price: parseFloat(quote['05. price']),
-                    marketCap: parseFloat(quote['05. price']) * 1000000, // Simplified market cap
-                    change: parseFloat(quote['10. change percent'].replace('%', '')),
-                    volume: parseInt(quote['06. volume'])
-                };
-            } catch (error) {
-                console.error(`Error fetching ${symbol}:`, error);
-                return null;
-            }
+        function getColor(change) {
+            change = parseFloat(change);
+            if (change > 2) return "#137333";
+            if (change > 0) return "#1e8e3e";
+            if (change > -2) return "#d93025";
+            return "#c5221f";
         }
 
-        // Keep all the other functions (formatMarketCap, formatVolume, getColor) the same
-
-        async function updateVisualization() {
-            const loadingOverlay = d3.select("#market-map")
-                .append("div")
-                .attr("class", "loading-overlay")
-                .append("div")
-                .attr("class", "loading-spinner");
-
-            try {
-                const data = { name: "Market Map", children: [] };
-                
-                // Add delay between requests to respect API limits
-                for (const [sector, symbols] of Object.entries(sectorStocks)) {
-                    const stocksData = [];
-                    for (const symbol of symbols) {
-                        const stockData = await fetchStockData(symbol);
-                        if (stockData) stocksData.push(stockData);
-                        // Add delay between requests
-                        await new Promise(resolve => setTimeout(resolve, 1500));
-                    }
-                    
-                    if (stocksData.length > 0) {
-                        data.children.push({
-                            name: sector,
-                            children: stocksData
-                        });
-                    }
-                }
-
-                // Rest of the visualization code remains the same
-                // ... (keep all the d3.js visualization code the same)
-
-            } catch (error) {
-                console.error("Error creating visualization:", error);
-                d3.select("#market-map")
-                    .html("<div class='error'>Error loading market data</div>");
-            }
+        function formatMarketCap(marketCap) {
+            if (marketCap >= 1e12) return `$${(marketCap / 1e12).toFixed(1)}T`;
+            return `$${(marketCap / 1e9).toFixed(1)}B`;
         }
 
-        // Initial load
-        updateVisualization();
+        function createVisualization(data) {
+            const width = document.querySelector("#market-map").clientWidth;
+            const height = 700;
 
-        // Refresh every 15 minutes (to stay within API limits)
-        setInterval(updateVisualization, 900000);
+            const treemap = d3.treemap()
+                .size([width, height])
+                .paddingTop(20)
+                .paddingRight(2)
+                .paddingBottom(2)
+                .paddingLeft(2)
+                .round(true);
+
+            const root = d3.hierarchy(data)
+                .sum(d => d.marketCap)
+                .sort((a, b) => b.value - a.value);
+
+            treemap(root);
+
+            const svg = d3.select("#market-map")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            const sectors = svg.selectAll("g")
+                .data(root.children)
+                .enter()
+                .append("g");
+
+            sectors.append("text")
+                .attr("class", "sector-label")
+                .attr("x", d => d.x0 + 5)
+                .attr("y", d => d.y0 + 15)
+                .text(d => d.data.name);
+
+            const cell = sectors.selectAll("g")
+                .data(d => d.leaves())
+                .enter()
+                .append("g")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            cell.append("rect")
+                .attr("class", "tile")
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", d => d.y1 - d.y0)
+                .attr("fill", d => getColor(d.data.change))
+                .on("mouseover", function(event, d) {
+                    const tooltip = d3.select("#tooltip");
+                    tooltip.style("display", "block")
+                        .html(`
+                            <div class="tooltip-header">${d.data.name}</div>
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Price:</span>
+                                <span>$${d.data.price.toFixed(2)}</span>
+                            </div>
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Change:</span>
+                                <span class="${d.data.change >= 0 ? 'positive' : 'negative'}">
+                                    ${d.data.change}%
+                                </span>
+                            </div>
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Market Cap:</span>
+                                <span>${formatMarketCap(d.data.marketCap)}</span>
+                            </div>
+                            <div class="tooltip-row">
+                                <span class="tooltip-label">Volume:</span>
+                                <span>${d.data.volume}</span>
+                            </div>
+                        `)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY + 10) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select("#tooltip").style("display", "none");
+                });
+
+            cell.append("text")
+                .attr("class", "tile-label")
+                .attr("x", 5)
+                .attr("y", 20)
+                .text(d => d.data.name);
+        }
+
+        // Create initial visualization with static data
+        createVisualization(initialData);
     </script>
 </body>
 </html>
